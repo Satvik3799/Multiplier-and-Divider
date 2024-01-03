@@ -1,0 +1,53 @@
+$constant RST_STATE: $uint<2>  :=0
+$constant LOOP_STATE: $uint<2> :=1
+$constant DONE_STATE: $uint<2> :=2
+
+$module [shift_and_add_mul] 
+		$in (a b: $uint<8>) 
+		$out (product : $uint<16>) $is
+{
+	$branchblock[loop]{
+			$merge $entry loopback
+					$phi current_state := RST_STATE $on $entry next_state $on loopback
+					$phi temp_product := $zero<17> $on $entry next_temp_product $on loopback
+					$phi temp_multiplicand := a $on $entry next_multiplicand $on loopback
+					$phi counter := $zero<4> $on $entry next_counter $on loopback
+			$endmerge
+			
+			next_state := 
+				($excmux 
+						(current_state == RST_STATE) LOOP_STATE
+						
+						(current_state == LOOP_STATE)
+								($mux (counter == 8) DONE_STATE LOOP_STATE)
+						
+						(current_state == DONE_STATE)
+								DONE_STATE
+				)
+			next_temp_product := 
+					($mux (current_state == LOOP_STATE)
+						($mux (temp_multiplicand [] 0)
+								($concat
+										(($concat $zero<2> ($slice temp_product 15 9)) + ($concat $zero<1> b))
+										($slice temp_product 8 1))
+								($concat $zero<1> ($slice temp_product 16 1)))
+						temp_product)
+			
+			next_multiplicand := ($mux (current_state == LOOP_STATE)
+							($concat $zero<1> ($slice temp_multiplicand 7 1))
+						temp_multiplicand)
+						
+			next_counter := ($mux (current_state == LOOP_STATE)
+									(counter + 1) counter)
+									
+			continue_flag := (counter < 9)
+			
+			$if continue_flag $then
+				$place[loopback]
+			$endif
+			
+	}(temp_product => temp_product)
+	
+	product := ($slice temp_product 15 0)
+}
+

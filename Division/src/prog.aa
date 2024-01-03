@@ -1,0 +1,57 @@
+$constant RST_STATE: $uint<2>:=0
+$constant LOOP_STATE: $uint<2> :=1
+$constant DONE_STATE: $uint<2> :=2
+
+
+$module [shift_and_subtract_div] 
+		$in (a b:$uint<8>) 
+		$out (quotient :$uint<8>) 
+		$is
+{   
+    temp := ($concat $zero<7> a $zero<1>)
+    $branchblock[loop]
+    {
+        $merge $entry loopback 
+            $phi current_state := RST_STATE $on $entry next_current_state $on loopback
+            $phi temp_quotient := $zero<8> $on $entry next_temp_quotient $on loopback
+            $phi dividend := temp $on $entry next_dividend $on loopback
+            $phi counter := 8 $on $entry next_counter $on loopback
+	    $endmerge
+
+        next_current_state :=
+		($excmux
+		        (current_state == RST_STATE) LOOP_STATE
+		        (current_state == LOOP_STATE)
+		        ($mux (counter == 0) DONE_STATE LOOP_STATE)
+		        (current_state == DONE_STATE) DONE_STATE)
+
+
+        next_temp_quotient := 
+		 	($mux (current_state == LOOP_STATE)
+		         	($mux (($slice dividend 15 8) < b) 
+		                	 ($concat ($slice temp_quotient 6 0) $zero<1>)             
+		                	 ($concat ($slice temp_quotient 6 0) $one<1>))
+		         temp_quotient)
+
+        next_dividend :=
+        		($mux (current_state == LOOP_STATE)
+            	 		($mux (($slice dividend 15 8) < b) 
+			        ($concat ($slice dividend 14 0) $zero<1>  ) 
+			        ($concat ($slice (($slice dividend 15 8)-b) 6 0) ($slice dividend 7 0) $zero<1>)) 
+		         dividend)
+
+        next_counter := 
+			($mux (current_state == LOOP_STATE )
+				 ($mux (counter > 0) (counter-1) $zero<4> )
+				 ($concat $one<1>  $zero<3>))
+
+        continue_flag := (counter > 0)
+
+        $if continue_flag $then
+        $place[loopback]
+        $endif
+
+    } (temp_quotient => temp_quotient)
+	quotient := temp_quotient
+}
+
